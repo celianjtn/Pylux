@@ -21,7 +21,7 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 [bundle exec] fastlane ios upload_pylux_ipa
 ```
 
-Upload the IPA at PYLUX_IPA_PATH to App Store Connect (TestFlight processing)
+Upload the IPA at PYLUX_IPA_PATH to App Store Connect
 
 ----
 

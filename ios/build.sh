@@ -352,13 +352,27 @@ run_dev() {
 # --- Release: build app for device, create archive ---
 ARCHIVE_PATH="$SCRIPT_DIR/build-derived/Pylux.xcarchive"
 
+# Mirrors .github/actions/extract-version: MAJOR*10000+MINOR*100+PATCH.
+_pylux_read_version_from_cmake() {
+    local cmake="$SCRIPT_DIR/../CMakeLists.txt"
+    local major minor patch
+    major=$(grep '^set(CHIAKI_VERSION_MAJOR' "$cmake" | awk '{print $2}' | tr -d ')')
+    minor=$(grep '^set(CHIAKI_VERSION_MINOR' "$cmake" | awk '{print $2}' | tr -d ')')
+    patch=$(grep '^set(CHIAKI_VERSION_PATCH' "$cmake" | awk '{print $2}' | tr -d ')')
+    PYLUX_MARKETING_VERSION="${major}.${minor}.${patch}"
+    PYLUX_BUILD_NUMBER=$(( 10#${major} * 10000 + 10#${minor} * 100 + 10#${patch} ))
+}
+
 create_release_archive() {
+    _pylux_read_version_from_cmake
     echo ""
-    echo "=== Creating archive for release ==="
+    echo "=== Creating archive for release (version ${PYLUX_MARKETING_VERSION}, build ${PYLUX_BUILD_NUMBER}) ==="
     (cd "$SCRIPT_DIR" && xcodebuild -project Pylux.xcodeproj -scheme "$SCHEME" -sdk iphoneos -configuration Release archive \
         -destination 'generic/platform=iOS' \
         -archivePath "$ARCHIVE_PATH" \
-        -derivedDataPath "$SCRIPT_DIR/build-derived")
+        -derivedDataPath "$SCRIPT_DIR/build-derived" \
+        MARKETING_VERSION="${PYLUX_MARKETING_VERSION}" \
+        CURRENT_PROJECT_VERSION="${PYLUX_BUILD_NUMBER}")
 
     if [ ! -d "$ARCHIVE_PATH" ]; then
         echo ""

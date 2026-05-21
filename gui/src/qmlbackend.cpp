@@ -2628,6 +2628,47 @@ void QmlBackend::configureSteamControllerLayout()
 #endif
 }
 
+void QmlBackend::ensurePyluxSteamShortcut(const QJSValue &callback)
+{
+    QJSValue cb = callback;
+    auto done = [cb](bool created) mutable {
+        if (cb.isCallable())
+            cb.call({created});
+    };
+
+    const QString profile = settings->GetCurrentProfile();
+    const QString name = profile.isEmpty() ? QStringLiteral("Pylux")
+                                           : QStringLiteral("Pylux %1").arg(profile);
+    const QString launchOptions = profile.isEmpty() ? QString()
+                                                    : QStringLiteral("--profile=%1").arg(profile);
+
+    const QString executable = getExecutable();
+    QString expectedLaunch = launchOptions;
+    if (executable == QLatin1String("flatpak")) {
+        const QString flatpakId = QProcessEnvironment::systemEnvironment().value(QStringLiteral("FLATPAK_ID"));
+        if (!flatpakId.isEmpty())
+            expectedLaunch.prepend(QStringLiteral("run %1 ").arg(flatpakId));
+    }
+
+    auto noop = [](const QString &) {};
+    SteamTools steam(noop, noop, QString());
+    if (!steam.steamExists()) {
+        done(false);
+        return;
+    }
+
+    QVector<SteamShortcutEntry> shortcuts = steam.parseShortcuts();
+    for (auto &entry : shortcuts) {
+        if (entry.getExe() == executable && entry.getLaunchOptions() == expectedLaunch) {
+            done(false);
+            return;
+        }
+    }
+
+    createSteamShortcut(name, launchOptions, QJSValue(), QString());
+    done(true);
+}
+
 void QmlBackend::createSteamShortcut(QString shortcutName, QString launchOptions, const QJSValue &callback, QString steamDir)
 {
     QJSValue cb = callback;

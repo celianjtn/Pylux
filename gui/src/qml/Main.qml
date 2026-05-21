@@ -8,7 +8,7 @@ import org.streetpea.chiaking
 Item {
     id: root
     property list<Item> restoreFocusItems
-    property bool initialAsk: false
+    property bool steamShortcutChecked: false
     Material.theme: Material.Dark
     Material.accent: "#00d4ff"
 
@@ -448,6 +448,10 @@ Item {
 
     AccountPrivacyDialog {
         id: accountPrivacyDialog
+    }
+
+    GamingModeAddedDialog {
+        id: gamingModeAddedDialog
     }
 
     RemindDialog {

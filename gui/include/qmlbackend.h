@@ -252,6 +252,7 @@ public:
     Q_INVOKABLE QString getSteamBaseDir();
     QString getSteamUserId();
 	Q_INVOKABLE void configureSteamControllerLayout();
+	Q_INVOKABLE void ensurePyluxSteamShortcut(const QJSValue &callback);
 	Q_INVOKABLE void createSteamShortcut(QString shortcutName, QString launchOptions, const QJSValue &callback, QString steamDir);
 #endif
 

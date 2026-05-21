@@ -158,15 +158,25 @@ jobs:
             else
               FP_BUNDLE="pylux-latest.flatpak"
             fi
-            FP_INSTALL="${FLATPAK_INSTALL:-curl -fsSL -o ${FP_BUNDLE} \"${FLATPAK_URL}\" && flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo && flatpak install --user -y ${FP_BUNDLE}}"
+            if [ -n "${FLATPAK_INSTALL}" ]; then
+              FP_INSTALL="$FLATPAK_INSTALL"
+            elif [ -n "${FLATPAK_URL}" ]; then
+              FP_INSTALL="curl -fsSL -o ${FP_BUNDLE} \"${FLATPAK_URL}\" && flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo && flatpak install --user -y ${FP_BUNDLE}"
+            else
+              FP_INSTALL=""
+            fi
             FP_RUN="${FLATPAK_RUN:-flatpak run io.github.ForWard_Technologies_LLC.Pylux}"
             echo "- **Flatpak (interim, until Flathub is live)** — install:"
             echo '  ```bash'
-            echo "  ${FP_INSTALL}"
+            if [ -n "$FP_INSTALL" ]; then
+              printf '  %s\n' "$FP_INSTALL"
+            else
+              echo "  (Flatpak install command unavailable — run Deploy Flatpak workflow first)"
+            fi
             echo '  ```'
             echo "  Run:"
             echo '  ```bash'
-            echo "  ${FP_RUN}"
+            printf '  %s\n' "$FP_RUN"
             echo '  ```'
             echo "  To update: run the install command again when a new bundle is published (no \`flatpak update\` until Flathub listing)."
             echo ""

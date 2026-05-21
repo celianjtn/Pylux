@@ -2642,14 +2642,6 @@ void QmlBackend::ensurePyluxSteamShortcut(const QJSValue &callback)
     const QString launchOptions = profile.isEmpty() ? QString()
                                                     : QStringLiteral("--profile=%1").arg(profile);
 
-    const QString executable = getExecutable();
-    QString expectedLaunch = launchOptions;
-    if (executable == QLatin1String("flatpak")) {
-        const QString flatpakId = QProcessEnvironment::systemEnvironment().value(QStringLiteral("FLATPAK_ID"));
-        if (!flatpakId.isEmpty())
-            expectedLaunch.prepend(QStringLiteral("run %1 ").arg(flatpakId));
-    }
-
     auto noop = [](const QString &) {};
     SteamTools steam(noop, noop, QString());
     if (!steam.steamExists()) {
@@ -2659,7 +2651,7 @@ void QmlBackend::ensurePyluxSteamShortcut(const QJSValue &callback)
 
     QVector<SteamShortcutEntry> shortcuts = steam.parseShortcuts();
     for (auto &entry : shortcuts) {
-        if (entry.getExe() == executable && entry.getLaunchOptions() == expectedLaunch) {
+        if (entry.getAppName().contains(QStringLiteral("Pylux"), Qt::CaseInsensitive)) {
             done(false);
             return;
         }

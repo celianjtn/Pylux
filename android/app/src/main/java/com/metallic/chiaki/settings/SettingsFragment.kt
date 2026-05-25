@@ -195,10 +195,12 @@ class SettingsFragment: PreferenceFragmentCompat(), TitleFragment
 		)
 
 		bindCloudBitratePreference(
-			preferenceScreen.findPreference(getString(R.string.preferences_cloud_bitrate_pscloud_key))
+			preferenceScreen.findPreference(getString(R.string.preferences_cloud_bitrate_pscloud_key)),
+			preferences
 		)
 		bindCloudBitratePreference(
-			preferenceScreen.findPreference(getString(R.string.preferences_cloud_bitrate_psnow_key))
+			preferenceScreen.findPreference(getString(R.string.preferences_cloud_bitrate_psnow_key)),
+			preferences
 		)
 
 		val bitratePreference = preferenceScreen.findPreference<EditTextPreference>(getString(R.string.preferences_bitrate_key))
@@ -383,7 +385,7 @@ class SettingsFragment: PreferenceFragmentCompat(), TitleFragment
 		.show()
 	}
 
-	private fun bindCloudBitratePreference(preference: SeekBarPreference?)
+	private fun bindCloudBitratePreference(preference: SeekBarPreference?, preferences: Preferences)
 	{
 		if (preference == null) return
 		val summaryRes = when (preference.key)

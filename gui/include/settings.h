@@ -767,6 +767,11 @@ class Settings : public QObject
 		bool GetDonationCachedStatus(bool *outStatus) const;
 		void SetDonationCachedStatus(bool donated);
 
+		// App Store review prompt (Mac App Store only): `donation_total_stream_time_ms`
+		// snapshot at the last `SKStoreReviewController.requestReview` call. 0 = never requested.
+		qint64 GetAppReviewLastPromptTotalStreamMs() const  { return settings.value("settings/app_review_last_prompt_total_stream_ms", 0).toLongLong(); }
+		void SetAppReviewLastPromptTotalStreamMs(qint64 ms) { settings.setValue("settings/app_review_last_prompt_total_stream_ms", ms); }
+
 	signals:
 		void RegisteredHostsUpdated();
 		void HiddenHostsUpdated();

@@ -59,6 +59,7 @@
 		A4000012 /* DonationPhrasePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000002 /* DonationPhrasePicker.swift */; };
 		A4000013 /* DonationPromptCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000003 /* DonationPromptCoordinator.swift */; };
 		A4000014 /* DonationPaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4000004 /* DonationPaywallView.swift */; };
+		A6000011 /* AppReviewHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6000001 /* AppReviewHelper.swift */; };
 		A4000015 /* donation_prompt_phrases.json in Resources */ = {isa = PBXBuildFile; fileRef = A4000005 /* donation_prompt_phrases.json */; };
 		A5000011 /* agpl_license.txt in Resources */ = {isa = PBXBuildFile; fileRef = A5000001 /* agpl_license.txt */; };
 		A5000012 /* disclaimer.txt in Resources */ = {isa = PBXBuildFile; fileRef = A5000002 /* disclaimer.txt */; };
@@ -135,6 +136,7 @@
 		A5000001 /* agpl_license.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = agpl_license.txt; path = ../gui/res/license/agpl_license.txt; sourceTree = SOURCE_ROOT; };
 		A5000002 /* disclaimer.txt */ = {isa = PBXFileReference; lastKnownFileType = text; name = disclaimer.txt; path = ../gui/res/license/disclaimer.txt; sourceTree = SOURCE_ROOT; };
 		A5000003 /* LicenseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LicenseView.swift; sourceTree = "<group>"; };
+		A6000001 /* AppReviewHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppReviewHelper.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -245,6 +247,7 @@
 				A1000025 /* StreamSession.swift */,
 				A1000027 /* StreamInput.swift */,
 				A1000152 /* StreamRumbleFeedback.swift */,
+				A6000001 /* AppReviewHelper.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -411,6 +414,7 @@
 				A4000012 /* DonationPhrasePicker.swift in Sources */,
 				A4000013 /* DonationPromptCoordinator.swift in Sources */,
 				A4000014 /* DonationPaywallView.swift in Sources */,
+				A6000011 /* AppReviewHelper.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

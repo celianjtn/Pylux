@@ -63,7 +63,22 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          brew install cmake ninja protobuf@29 python-setuptools
+          retry() {
+            local attempts="$1"
+            shift
+            local n=1
+            until "$@"; do
+              if [ "$n" -ge "$attempts" ]; then
+                echo "Command failed after $n attempts: $*"
+                return 1
+              fi
+              local sleep_s=$((n * 15))
+              echo "Attempt $n failed; retrying in ${sleep_s}s: $*"
+              sleep "$sleep_s"
+              n=$((n + 1))
+            done
+          }
+          retry 4 brew install cmake ninja protobuf@29 python-setuptools
           pip3 install --user --break-system-packages 'protobuf>=5,<6'
           echo "$(brew --prefix)/opt/protobuf@29/bin" >> "$GITHUB_PATH"
 
@@ -228,7 +243,22 @@ jobs:
           PYLUX_SUBMIT_FOR_REVIEW: ${{ github.ref_name == 'master' && 'true' || 'false' }}
           PYLUX_TESTFLIGHT_EXTERNAL_BETA: ${{ github.ref_name == 'release/beta' && 'true' || 'false' }}
         run: |
-          brew install fastlane
+          retry() {
+            local attempts="$1"
+            shift
+            local n=1
+            until "$@"; do
+              if [ "$n" -ge "$attempts" ]; then
+                echo "Command failed after $n attempts: $*"
+                return 1
+              fi
+              local sleep_s=$((n * 15))
+              echo "Attempt $n failed; retrying in ${sleep_s}s: $*"
+              sleep "$sleep_s"
+              n=$((n + 1))
+            done
+          }
+          retry 4 brew install fastlane
           export PYLUX_IPA_PATH="${{ env.IPA_PATH }}"
           fastlane upload_pylux_ipa
 

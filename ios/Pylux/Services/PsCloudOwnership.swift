@@ -33,11 +33,18 @@ enum PsCloudOwnership {
     static func crossReferenceOwnedGames(
         filteredEntitlements: [PsCloudEntitlement],
         publicCatalog: [CloudGame],
-        plusLibrarySupplement: [CloudGame] = []
+        plusLibrarySupplement: [CloudGame] = [],
+        productIdAliases: [String: String] = [:]
     ) -> [CloudGame] {
         var catalogMap: [String: CloudGame] = [:]
         for game in publicCatalog {
             catalogMap[game.id] = game
+        }
+        for (alias, canonical) in productIdAliases {
+            if catalogMap[alias] != nil { continue }
+            if let meta = catalogMap[canonical] {
+                catalogMap[alias] = meta
+            }
         }
         var supplementMap: [String: CloudGame] = [:]
         for game in plusLibrarySupplement {

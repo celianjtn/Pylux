@@ -1029,6 +1029,11 @@ class CloudPlayFragment : Fragment()
 			viewModel.clearError()
 			showError(error)
 		})
+
+		viewModel.warning.observe(viewLifecycleOwner, Observer { warning ->
+			if (warning.isNullOrEmpty()) return@Observer
+			Toast.makeText(requireContext(), warning, Toast.LENGTH_LONG).show()
+		})
 	}
 
 	private fun updateEmptyState(isEmpty: Boolean)

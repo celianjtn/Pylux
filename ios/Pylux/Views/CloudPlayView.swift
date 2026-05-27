@@ -35,6 +35,7 @@ final class CloudPlayViewModel: ObservableObject {
     @Published var loading = false
     @Published var refreshing = false
     @Published var error: String?
+    @Published var warning: String?
     @Published var currentSection: Section = .library
     @Published var searchQuery = ""
     @Published var sortOrder: SortOrder = .defaultOrder
@@ -103,6 +104,7 @@ final class CloudPlayViewModel: ObservableObject {
     func loadGames(npssoToken: String) {
         loading = true
         error = nil
+        warning = nil
         let section = currentSection
         let ownedOnly = showOwnedOnly
 
@@ -114,7 +116,6 @@ final class CloudPlayViewModel: ObservableObject {
             case .catalog:
                 loadedGames = self.catalogService.fetchPsnowCatalog(npssoToken: npssoToken)
             case .library:
-                // Matches Android: showOnlyOwned toggles between two different fetch paths
                 if ownedOnly {
                     loadedGames = self.catalogService.fetchOwnedPs5Games(npssoToken: npssoToken)
                 } else {
@@ -123,14 +124,23 @@ final class CloudPlayViewModel: ObservableObject {
             }
 
             await MainActor.run {
-                self.games = loadedGames
-                self.loading = false
-                if loadedGames.isEmpty {
-                    self.error = section == .library
-                        ? "No cloud games found. Check your connection."
-                        : "Failed to load catalog. Check your connection."
-                }
+                self.applyLoadedGames(loadedGames, section: section)
             }
+        }
+    }
+
+    private func applyLoadedGames(_ loadedGames: [CloudGame], section: Section) {
+        games = loadedGames
+        loading = false
+        if let fetchError = catalogService.lastLibraryFetchError {
+            error = fetchError
+        } else if loadedGames.isEmpty {
+            error = section == .library
+                ? "No cloud games found. Check your connection."
+                : "Failed to load catalog. Check your connection."
+        }
+        if section == .library && !CloudLocaleSettings.isConfigured {
+            warning = CloudLocaleSettings.unconfiguredWarning()
         }
     }
 
@@ -139,6 +149,7 @@ final class CloudPlayViewModel: ObservableObject {
         refreshing = true
         loading = true
         error = nil
+        warning = nil
         let section = currentSection
         let ownedOnly = showOwnedOnly
 
@@ -164,12 +175,7 @@ final class CloudPlayViewModel: ObservableObject {
             }
 
             await MainActor.run {
-                self.games = loadedGames
-                if loadedGames.isEmpty {
-                    self.error = section == .library
-                        ? "No cloud games found. Check your connection."
-                        : "Failed to load catalog. Check your connection."
-                }
+                self.applyLoadedGames(loadedGames, section: section)
             }
         }
     }
@@ -270,6 +276,15 @@ struct CloudPlayView: View {
                     VStack(spacing: 0) {
                         // Sub-tabs: Catalog / Library
                         cloudSubTabs
+
+                        if let warning = viewModel.warning {
+                            Text(warning)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                        }
 
                         // Search bar (when visible)
                         if showSearch {

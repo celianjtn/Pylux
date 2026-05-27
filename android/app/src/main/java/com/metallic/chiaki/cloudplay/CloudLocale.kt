@@ -24,4 +24,8 @@ object CloudLocale
 			return null
 		return "$lang-${cty.uppercase()}"
 	}
+
+	/** Non-fatal warning when locale could not be learned from Kamaji (catalog may use en-US). */
+	fun unconfiguredWarning(): String =
+		"Could not detect your PlayStation region. The catalog may not match your store."
 }

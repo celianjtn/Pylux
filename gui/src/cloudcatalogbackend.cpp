@@ -64,7 +64,9 @@ CloudCatalogBackend::CloudCatalogBackend(Settings *settings, QObject *parent)
     // Initialize cross-reference state
     crossReferenceState.callback = QJSValue();
     crossReferenceState.cloudCatalogGames = QJsonArray();
+    crossReferenceState.plusLibrarySupplement = QJsonArray();
     crossReferenceState.ownedGames = QJsonArray();
+    crossReferenceState.productIdAliases.clear();
     crossReferenceState.catalogFetched = false;
     crossReferenceState.ownedGamesFetched = false;
 }
@@ -886,10 +888,30 @@ static QString ps5CloudConceptKey(const QJsonObject &gameObj)
     return gameObj.value(QStringLiteral("productId")).toString();
 }
 
+static QJsonObject productIdAliasesToJson(const QMap<QString, QString> &aliases)
+{
+    QJsonObject obj;
+    for (auto it = aliases.cbegin(); it != aliases.cend(); ++it)
+        obj.insert(it.key(), it.value());
+    return obj;
+}
+
+static QMap<QString, QString> productIdAliasesFromJson(const QJsonObject &obj)
+{
+    QMap<QString, QString> aliases;
+    for (auto it = obj.begin(); it != obj.end(); ++it) {
+        const QString canonical = it.value().toString();
+        if (!canonical.isEmpty())
+            aliases.insert(it.key(), canonical);
+    }
+    return aliases;
+}
+
 static void mergeImagicListIntoPs5Catalog(const QString &categoryList,
                                           const QJsonDocument &doc,
                                           QMap<QString, QJsonObject> &gamesByConceptId,
                                           QMap<QString, QJsonObject> &plusLibrarySupplementByProductId,
+                                          QMap<QString, QString> &productIdAliases,
                                           int &totalGamesSeen)
 {
     if (!doc.isArray())
@@ -921,8 +943,19 @@ static void mergeImagicListIntoPs5Catalog(const QString &categoryList,
                 continue;
 
             const QString key = ps5CloudConceptKey(gameObj);
-            if (key.isEmpty() || gamesByConceptId.contains(key))
+            const QString productId = gameObj.value(QStringLiteral("productId")).toString();
+            if (key.isEmpty() || productId.isEmpty())
                 continue;
+
+            if (gamesByConceptId.contains(key)) {
+                const QString canonicalProductId =
+                    gamesByConceptId.value(key).value(QStringLiteral("productId")).toString();
+                if (!canonicalProductId.isEmpty() && productId != canonicalProductId
+                    && !productIdAliases.contains(productId)) {
+                    productIdAliases.insert(productId, canonicalProductId);
+                }
+                continue;
+            }
 
             gamesByConceptId.insert(key, gameObj);
         }
@@ -952,6 +985,7 @@ void CloudCatalogBackend::fetchPs5CloudCatalog(const QJSValue &callback)
     ps5State.callback = callback;
     ps5State.gamesByConceptId.clear();
     ps5State.plusLibrarySupplementByProductId.clear();
+    ps5State.productIdAliases.clear();
     ps5State.totalGamesSeen = 0;
     ps5State.fetchFailed = false;
     ps5State.pendingListFetches = kPs5ImagicCategoryLists.size();
@@ -1014,6 +1048,7 @@ void CloudCatalogBackend::handlePs5ImagicListResponse()
         } else {
             mergeImagicListIntoPs5Catalog(categoryList, doc, ps5State.gamesByConceptId,
                                           ps5State.plusLibrarySupplementByProductId,
+                                          ps5State.productIdAliases,
                                           ps5State.totalGamesSeen);
         }
     }
@@ -1051,12 +1086,15 @@ void CloudCatalogBackend::finalizePs5CloudCatalogFetch()
         qInfo() << "  Imagic rows scanned:" << ps5State.totalGamesSeen;
         qInfo() << "  PS5 streaming games (deduped by conceptId):" << allGames.size();
         qInfo() << "  Plus library-stream supplement (stream=false):" << plusSupplementGames.size();
+        qInfo() << "  Product ID aliases (same conceptId):" << ps5State.productIdAliases.size();
     }
 
     QJsonObject result;
     result[QStringLiteral("games")] = allGames;
     result[QStringLiteral("total")] = allGames.size();
     result[QStringLiteral("plusLibrarySupplement")] = plusSupplementGames;
+    if (!ps5State.productIdAliases.isEmpty())
+        result[QStringLiteral("productIdAliases")] = productIdAliasesToJson(ps5State.productIdAliases);
 
     const QJsonDocument resultDoc(result);
 
@@ -1065,6 +1103,7 @@ void CloudCatalogBackend::finalizePs5CloudCatalogFetch()
     if (crossReferenceState.callback.isCallable() && !crossReferenceState.catalogFetched) {
         crossReferenceState.cloudCatalogGames = allGames;
         crossReferenceState.plusLibrarySupplement = plusSupplementGames;
+        crossReferenceState.productIdAliases = ps5State.productIdAliases;
         crossReferenceState.catalogFetched = true;
         if (settings && settings->GetLogVerbose()) {
             qInfo() << "[CROSS-REF] Fetched PS5 cloud catalog from API:" << allGames.size() << "games";
@@ -1534,7 +1573,9 @@ void CloudCatalogBackend::getOwnedPs5CloudGames(const QJSValue &callback)
     // Initialize cross-reference state
     crossReferenceState.callback = callback;
     crossReferenceState.cloudCatalogGames = QJsonArray();
+    crossReferenceState.plusLibrarySupplement = QJsonArray();
     crossReferenceState.ownedGames = QJsonArray();
+    crossReferenceState.productIdAliases.clear();
     crossReferenceState.catalogFetched = false;
     crossReferenceState.ownedGamesFetched = false;
     
@@ -1565,6 +1606,15 @@ void CloudCatalogBackend::getOwnedPs5CloudGames(const QJSValue &callback)
                 if (settings && settings->GetLogVerbose()) {
                     qInfo() << "[CROSS-REF] Loaded Plus library supplement from cache:"
                             << crossReferenceState.plusLibrarySupplement.size() << "games";
+                }
+            }
+            if (obj.contains(QStringLiteral("productIdAliases"))
+                && obj.value(QStringLiteral("productIdAliases")).isObject()) {
+                crossReferenceState.productIdAliases =
+                    productIdAliasesFromJson(obj.value(QStringLiteral("productIdAliases")).toObject());
+                if (settings && settings->GetLogVerbose()) {
+                    qInfo() << "[CROSS-REF] Loaded product ID aliases from cache:"
+                            << crossReferenceState.productIdAliases.size();
                 }
             }
         }
@@ -2088,6 +2138,14 @@ void CloudCatalogBackend::processCrossReferenceComplete()
         }
     }
 
+    for (auto it = crossReferenceState.productIdAliases.cbegin();
+         it != crossReferenceState.productIdAliases.cend(); ++it) {
+        if (cloudCatalogMap.contains(it.key()))
+            continue;
+        if (cloudCatalogMap.contains(it.value()))
+            cloudCatalogMap.insert(it.key(), cloudCatalogMap.value(it.value()));
+    }
+
     for (const QJsonValue &game : crossReferenceState.plusLibrarySupplement) {
         if (game.isObject()) {
             QJsonObject gameObj = game.toObject();
@@ -2099,6 +2157,7 @@ void CloudCatalogBackend::processCrossReferenceComplete()
 
     if (settings && settings->GetLogVerbose()) {
         qInfo() << "[CROSS-REF] Cloud catalog map size:" << cloudCatalogMap.size();
+        qInfo() << "[CROSS-REF] Product ID aliases:" << crossReferenceState.productIdAliases.size();
         qInfo() << "[CROSS-REF] Plus library supplement map size:" << plusSupplementMap.size();
         qInfo() << "[CROSS-REF] Owned games count:" << crossReferenceState.ownedGames.size();
     }
@@ -2181,6 +2240,7 @@ void CloudCatalogBackend::processCrossReferenceComplete()
     crossReferenceState.cloudCatalogGames = QJsonArray();
     crossReferenceState.plusLibrarySupplement = QJsonArray();
     crossReferenceState.ownedGames = QJsonArray();
+    crossReferenceState.productIdAliases.clear();
     crossReferenceState.catalogFetched = false;
     crossReferenceState.ownedGamesFetched = false;
 }

@@ -51,10 +51,17 @@ object PsCloudOwnership
 	fun crossReferenceOwnedGames(
 		filteredEntitlements: List<Entitlement>,
 		publicCatalog: List<CloudGame>,
-		plusLibrarySupplement: List<CloudGame> = emptyList()
+		plusLibrarySupplement: List<CloudGame> = emptyList(),
+		productIdAliases: Map<String, String> = emptyMap(),
 	): List<CloudGame>
 	{
-		val catalogMap = publicCatalog.associateBy { it.productId }
+		val catalogMap = publicCatalog.associateBy { it.productId }.toMutableMap()
+		for ((alias, canonical) in productIdAliases)
+		{
+			if (alias in catalogMap)
+				continue
+			catalogMap[canonical]?.let { catalogMap[alias] = it }
+		}
 		val supplementMap = plusLibrarySupplement.associateBy { it.productId }
 		val ownedGames = mutableListOf<CloudGame>()
 

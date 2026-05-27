@@ -13,7 +13,8 @@ import org.json.JSONObject
 
 data class Ps5CloudCatalogResult(
 	val browseGames: List<CloudGame>,
-	val plusLibrarySupplement: List<CloudGame>
+	val plusLibrarySupplement: List<CloudGame>,
+	val productIdAliases: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -44,13 +45,14 @@ class PsCloudCatalogService
 
 		val byConceptId = LinkedHashMap<String, JSONObject>()
 		val plusSupplementByProductId = LinkedHashMap<String, JSONObject>()
+		val productIdAliases = LinkedHashMap<String, String>()
 		var totalGames = 0
 
 		IMAGIC_PS5_CLOUD_CATEGORY_LISTS.map { categoryList ->
 			async { categoryList to fetchImagicCategoryList(locale, categoryList) }
 		}.awaitAll().forEach { (categoryList, jsonArray) ->
 			totalGames += mergeImagicCategoryIntoMap(
-				categoryList, jsonArray, byConceptId, plusSupplementByProductId
+				categoryList, jsonArray, byConceptId, plusSupplementByProductId, productIdAliases
 			)
 		}
 
@@ -60,8 +62,9 @@ class PsCloudCatalogService
 		Log.i(TAG, "  Imagic rows scanned: $totalGames")
 		Log.i(TAG, "  PS5 streaming games (deduped by conceptId): ${browseGames.size}")
 		Log.i(TAG, "  Plus library-stream supplement (stream=false): ${plusLibrarySupplement.size}")
+		Log.i(TAG, "  Product ID aliases (same conceptId): ${productIdAliases.size}")
 
-		Ps5CloudCatalogResult(browseGames, plusLibrarySupplement)
+		Ps5CloudCatalogResult(browseGames, plusLibrarySupplement, productIdAliases)
 	}
 
 	private suspend fun fetchImagicCategoryList(locale: String, categoryList: String): JSONArray
@@ -90,6 +93,7 @@ class PsCloudCatalogService
 		jsonArray: JSONArray,
 		byConceptId: LinkedHashMap<String, JSONObject>,
 		plusSupplementByProductId: LinkedHashMap<String, JSONObject>,
+		productIdAliases: LinkedHashMap<String, String>,
 	): Int
 	{
 		var rows = 0
@@ -115,8 +119,22 @@ class PsCloudCatalogService
 				if (!isPs5StreamingGame(gameObj))
 					continue
 				val key = conceptKey(gameObj)
-				if (key.isNotEmpty() && !byConceptId.containsKey(key))
-					byConceptId[key] = gameObj
+				val productId = gameObj.optString("productId", "")
+				if (key.isEmpty() || productId.isEmpty())
+					continue
+
+				if (byConceptId.containsKey(key))
+				{
+					val canonicalProductId = byConceptId[key]?.optString("productId", "") ?: ""
+					if (canonicalProductId.isNotEmpty() && productId != canonicalProductId
+						&& !productIdAliases.containsKey(productId))
+					{
+						productIdAliases[productId] = canonicalProductId
+					}
+					continue
+				}
+
+				byConceptId[key] = gameObj
 			}
 		}
 		return rows
@@ -245,7 +263,8 @@ class PsCloudCatalogService
 		val ownedGames = getOwnedPs5CloudGames(
 			npssoToken,
 			catalog.browseGames,
-			catalog.plusLibrarySupplement
+			catalog.plusLibrarySupplement,
+			catalog.productIdAliases
 		)
 		
 		Log.i(TAG, "  Owned streaming games: ${ownedGames.size}")
@@ -258,7 +277,8 @@ class PsCloudCatalogService
 	suspend fun getOwnedPs5CloudGames(
 		npssoToken: String,
 		publicCatalog: List<CloudGame>,
-		plusLibrarySupplement: List<CloudGame> = emptyList()
+		plusLibrarySupplement: List<CloudGame> = emptyList(),
+		productIdAliases: Map<String, String> = emptyMap(),
 	): List<CloudGame>
 	{
 		if (npssoToken.isEmpty()) return emptyList()
@@ -270,7 +290,7 @@ class PsCloudCatalogService
 		val filtered = PsCloudOwnership.filterOwnedPs5Games(rawEntitlements)
 		
 		return PsCloudOwnership.crossReferenceOwnedGames(
-			filtered, publicCatalog, plusLibrarySupplement
+			filtered, publicCatalog, plusLibrarySupplement, productIdAliases
 		)
 	}
 	

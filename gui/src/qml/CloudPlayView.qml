@@ -298,7 +298,19 @@ Pane {
 
             let catalogMatch = findPs5CloudCatalogIndexForOwned(ownedGame, catalogIndex);
             if (catalogMatch >= 0) {
-                games[catalogMatch].isOwned = true;
+                let existing = games[catalogMatch];
+                existing.isOwned = true;
+                let streamId = ps5CloudStreamingId(ownedGame);
+                if (streamId)
+                    existing.id = streamId;
+                let ownedProductId = ps5CloudProductId(ownedGame);
+                if (ownedProductId) {
+                    if (!existing.product_id)
+                        existing.product_id = ownedProductId;
+                    if (!existing.productId)
+                        existing.productId = ownedProductId;
+                }
+                games[catalogMatch] = existing;
                 continue;
             }
 

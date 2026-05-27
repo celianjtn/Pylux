@@ -178,6 +178,10 @@ enum CloudLocaleSettings {
 
     static var imagicLocale: String { stored.lowercased() }
 
+    static func unconfiguredWarning() -> String {
+        "Could not detect your PlayStation region. The catalog may not match your store."
+    }
+
     static func parseStorePath(_ stored: String) -> (country: String, language: String) {
         let parts = stored.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
         let language = parts.first.map(String.init)?.lowercased()

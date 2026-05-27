@@ -102,6 +102,7 @@ private:
         bool fetchFailed = false;
         QMap<QString, QJsonObject> gamesByConceptId;
         QMap<QString, QJsonObject> plusLibrarySupplementByProductId;
+        QMap<QString, QString> productIdAliases; // alternate imagic productId -> canonical browse productId
         int totalGamesSeen = 0;
     } ps5State;
     
@@ -127,6 +128,7 @@ private:
         QJsonArray cloudCatalogGames;
         QJsonArray plusLibrarySupplement;
         QJsonArray ownedGames;
+        QMap<QString, QString> productIdAliases;
         bool catalogFetched;
         bool ownedGamesFetched;
     } crossReferenceState;

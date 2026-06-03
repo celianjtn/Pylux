@@ -52,6 +52,10 @@ class CloudGameRepository(
 		private const val PSCLOUD_OWNED_CACHE_FILE = "pscloud_owned_v2.json" // v2: ft0 filter + rank dedupe + featureType
 		private const val PS5_CATALOG_V3_CACHE_FILE = "ps5_cloud_catalog_v3.json"
 		private const val CACHE_DURATION_MS = 24 * 60 * 60 * 1000L // 24 hours
+
+		// Region-group-specific so an Americas/PAL switch doesn't serve stale ids (e.g. "_US"/"_GB").
+		private fun ps3ClassicsCacheFile(accountCountry: String): String =
+			"ps3_classics_catalog_${com.metallic.chiaki.cloudplay.KamajiClassics.classicsStoreCountry(accountCountry)}.json"
 	}
 	
 	private val psnowCatalogService = PsnCatalogService(preferences)
@@ -280,6 +284,43 @@ class CloudGameRepository(
 		}
 	}
 	
+	/**
+	 * Fetch the streamable PS3 Classics (public Apollo container) with region-keyed caching.
+	 * Subscription-streamable (never "owned"), so callers append these to the Catalog and the
+	 * Library "all" view only. Mirrors CloudCatalogBackend::fetchPs3Catalog() (Qt).
+	 */
+	suspend fun fetchPs3ClassicsCatalog(forceRefresh: Boolean = false): PsnResult<List<CloudGame>>
+	{
+		return withContext(Dispatchers.IO)
+		{
+			CloudLocaleBootstrap.ensureConfigured(preferences, preferences.getNpssoToken())
+			// Account country = country part of the store locale (e.g. "en-HU" -> "HU").
+			val (accountCountry, _) = com.metallic.chiaki.cloudplay.CloudLocale.parseStorePath(preferences.getCloudLanguage())
+			val cacheFile = ps3ClassicsCacheFile(accountCountry)
+
+			if (!forceRefresh)
+			{
+				loadCachedGames(cacheFile)?.let { cached ->
+					Log.i(TAG, "Returning ${cached.size} PS3 Classics from cache ($cacheFile)")
+					return@withContext PsnResult.Success(cached)
+				}
+			}
+
+			try
+			{
+				val games = pscloudCatalogService.fetchPs3ClassicsCatalog(accountCountry)
+				if (games.isNotEmpty())
+					cacheGames(games, cacheFile)
+				PsnResult.Success(games)
+			}
+			catch (e: Exception)
+			{
+				Log.w(TAG, "Failed to fetch PS3 Classics catalog", e)
+				PsnResult.Error("Failed to fetch PS3 Classics catalog: ${e.message}", e)
+			}
+		}
+	}
+
 	/**
 	 * Load games from cache if valid
 	 */

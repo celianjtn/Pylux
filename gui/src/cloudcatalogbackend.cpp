@@ -874,6 +874,152 @@ void CloudCatalogBackend::processPsnowCatalogComplete()
     emit catalogUpdated();
 }
 
+// ---------------------------------------------------------------------------
+// PS3 Classics catalog (public Apollo container walk)
+//
+// The PS Plus PC ("Apollo") app browses the streamable catalog through the public
+// pcnow container API at psnow.playstation.com. There is a dedicated PS3 container,
+// STORE-MSF192018-APOLLOPS3GAMES, that lists ~300 streamable PS3 titles with their
+// PS3 product ids (NPUA/NPUB/BLUS/BCUS) -- none of which appear in the imagic
+// gameslist the rest of the catalog uses. The container API needs no OAuth or
+// per-account session (unlike /user/stores, which 404s in regions where the PC app
+// is unavailable, e.g. Hungary), so we can walk it directly in any region. The
+// resulting titles carry playable_platform ["PS3"] and stream via the existing
+// PSNOW -> Gaikai konan path.
+// ---------------------------------------------------------------------------
+// Resolve the account's region group from its store locale (e.g. "en-HU" -> "HU").
+// pcnow has two Classics id families (Americas/SCEA and PAL/SCEE); a PS Plus account is
+// authorized at Gaikai only for the family of its own region group, so the catalog must
+// be browsed in that group. See KamajiConsts::classicsStoreCountry / classicsPs3ContainerId.
+QString CloudCatalogBackend::ps3AccountCountry() const
+{
+    QString locale = settings ? settings->GetCloudLanguagePSCloud() : QStringLiteral("en-US");
+    QStringList parts = locale.split(QLatin1Char('-'));
+    QString cc = parts.size() > 1 ? parts[1] : QStringLiteral("US");
+    return cc.toUpper();
+}
+
+void CloudCatalogBackend::fetchPs3Catalog(const QJSValue &callback)
+{
+    const QString cc = ps3AccountCountry();
+    // Region-group-specific cache key so an Americas/PAL switch doesn't serve stale ids.
+    const QString cacheKey = QStringLiteral("ps3_catalog_") + KamajiConsts::classicsStoreCountry(cc);
+    QString cached = getCachedData(cacheKey, CACHE_DURATION_CATALOG);
+    if (!cached.isEmpty()) {
+        qInfo() << "[CACHE] Using cached PS3 catalog";
+        QJsonDocument doc = QJsonDocument::fromJson(cached.toUtf8());
+        if (callback.isCallable())
+            callback.call({true, "Cached", QJSValue(QString::fromUtf8(doc.toJson(QJsonDocument::Compact)))});
+        return;
+    }
+
+    if (ps3State.inProgress) {
+        qInfo() << "[PS3] Catalog fetch already in progress";
+        if (callback.isCallable())
+            callback.call({false, "Request already in progress", QJSValue()});
+        return;
+    }
+
+    ps3State.containerUrl = QStringLiteral(
+        "https://psnow.playstation.com/store/api/pcnow/00_09_000/container/%1/en/19/%2")
+        .arg(KamajiConsts::classicsStoreCountry(cc), KamajiConsts::classicsPs3ContainerId(cc));
+    qInfo() << "[API CALL] Fetching PS3 Classics catalog (region group"
+            << KamajiConsts::classicsStoreCountry(cc) << "for account country" << cc << ")";
+    ps3State.callback = callback;
+    ps3State.allGames = QJsonArray();
+    ps3State.currentStart = 0;
+    ps3State.totalResults = -1;
+    ps3State.inProgress = true;
+    fetchPs3CatalogPage();
+}
+
+void CloudCatalogBackend::fetchPs3CatalogPage()
+{
+    QString url = QString("%1?useOffers=true&gkb=1&gkb2=1&start=%2&size=100")
+                      .arg(ps3State.containerUrl)
+                      .arg(ps3State.currentStart);
+
+    if (settings && settings->GetLogVerbose()) {
+        qInfo() << "=== CloudCatalogBackend: PS3 catalog page ===";
+        qInfo() << "  URL:" << url;
+    }
+
+    QNetworkRequest req{QUrl(url)};
+    req.setRawHeader("Accept", "application/json");
+    req.setRawHeader("User-Agent", KamajiConsts::USER_AGENT.toUtf8());
+
+    QNetworkReply *reply = networkManager->get(req);
+    connect(reply, &QNetworkReply::finished, this, &CloudCatalogBackend::handlePs3CatalogPageResponse);
+}
+
+void CloudCatalogBackend::handlePs3CatalogPageResponse()
+{
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    if (!reply) return;
+    reply->deleteLater();
+
+    int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    QByteArray data = reply->readAll();
+
+    if (reply->error() != QNetworkReply::NoError || statusCode != 200) {
+        QString errorMsg = QString("PS3 catalog fetch failed (HTTP %1): %2")
+                               .arg(statusCode).arg(reply->errorString());
+        qWarning() << "CloudCatalogBackend:" << errorMsg;
+        if (ps3State.allGames.isEmpty()) {
+            ps3State.inProgress = false;
+            if (ps3State.callback.isCallable())
+                ps3State.callback.call({false, errorMsg, QJSValue()});
+            return;
+        }
+        // Partial data already collected: return what we have.
+        finishPs3Catalog();
+        return;
+    }
+
+    QJsonObject obj = QJsonDocument::fromJson(data).object();
+    if (ps3State.totalResults < 0)
+        ps3State.totalResults = obj.value("total_results").toInt();
+
+    QJsonArray links = obj.value("links").toArray();
+    int productCount = 0;
+    for (const QJsonValue &v : links) {
+        QJsonObject g = v.toObject();
+        if (g.value("container_type").toString() != QLatin1String("product"))
+            continue;
+        QString img = extractCoverImageFromGameObject(g);
+        if (!img.isEmpty())
+            g["imageUrl"] = img;
+        ps3State.allGames.append(g);
+        productCount++;
+    }
+
+    if (settings && settings->GetLogVerbose())
+        qInfo() << "  PS3 page games:" << productCount << "accumulated:" << ps3State.allGames.size()
+                << "of" << ps3State.totalResults;
+
+    ps3State.currentStart += 100;
+    if (productCount > 0 && ps3State.currentStart < ps3State.totalResults) {
+        fetchPs3CatalogPage();
+    } else {
+        finishPs3Catalog();
+    }
+}
+
+void CloudCatalogBackend::finishPs3Catalog()
+{
+    QJsonObject result;
+    result["games"] = ps3State.allGames;
+    result["total"] = ps3State.allGames.size();
+    QJsonDocument resultDoc(result);
+    setCachedData(QStringLiteral("ps3_catalog_") + KamajiConsts::classicsStoreCountry(ps3AccountCountry()), resultDoc);
+
+    qInfo() << "[PS3] Catalog complete:" << ps3State.allGames.size() << "PS3 titles";
+
+    ps3State.inProgress = false;
+    if (ps3State.callback.isCallable())
+        ps3State.callback.call({true, "Success", QJSValue(QString::fromUtf8(resultDoc.toJson(QJsonDocument::Compact)))});
+}
+
 namespace {
 
 // Canonicalize a "language-COUNTRY" locale to lowercase-language / uppercase-country.

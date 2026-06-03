@@ -110,7 +110,7 @@ final class CloudPlayViewModel: ObservableObject {
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
-            let loadedGames: [CloudGame]
+            var loadedGames: [CloudGame]
 
             switch section {
             case .catalog:
@@ -121,11 +121,15 @@ final class CloudPlayViewModel: ObservableObject {
                 loadedGames = psnow.isEmpty
                     ? self.catalogService.fetchPlusCatalogGames(npssoToken: npssoToken)
                     : psnow
+                // PS3 Classics are subscription-streamable, so they belong in the Game Catalog.
+                loadedGames += self.catalogService.fetchPs3Catalog()
             case .library:
                 if ownedOnly {
                     loadedGames = self.catalogService.fetchOwnedPs5Games(npssoToken: npssoToken)
                 } else {
                     loadedGames = self.catalogService.fetchAllPs5CloudGames(npssoToken: npssoToken)
+                    // PS3 Classics are part of the streamable "all" universe (never the "owned" view).
+                    loadedGames += self.catalogService.fetchPs3Catalog()
                 }
             }
 
@@ -166,7 +170,7 @@ final class CloudPlayViewModel: ObservableObject {
         let ownedOnly = showOwnedOnly
 
         Task.detached(priority: .userInitiated) { [weak self] in
-            let loadedGames: [CloudGame]
+            var loadedGames: [CloudGame] = []
             defer {
                 Task { @MainActor in
                     self?.loading = false
@@ -183,11 +187,15 @@ final class CloudPlayViewModel: ObservableObject {
                 loadedGames = psnow.isEmpty
                     ? self.catalogService.fetchPlusCatalogGames(npssoToken: npssoToken, forceRefresh: true)
                     : psnow
+                // PS3 Classics are subscription-streamable, so they belong in the Game Catalog.
+                loadedGames += self.catalogService.fetchPs3Catalog(forceRefresh: true)
             case .library:
                 if ownedOnly {
                     loadedGames = self.catalogService.fetchOwnedPs5Games(npssoToken: npssoToken, forceRefresh: true)
                 } else {
                     loadedGames = self.catalogService.fetchAllPs5CloudGames(npssoToken: npssoToken, forceRefresh: true)
+                    // PS3 Classics are part of the streamable "all" universe (never the "owned" view).
+                    loadedGames += self.catalogService.fetchPs3Catalog(forceRefresh: true)
                 }
             }
 

@@ -309,8 +309,23 @@ class PSKamajiSession(
 		try
 		{
 		val localeSetting = preferences.getCloudLanguage()
-		val (country, language) = com.metallic.chiaki.cloudplay.CloudLocale.parseStorePath(localeSetting)
+		var (country, language) = com.metallic.chiaki.cloudplay.CloudLocale.parseStorePath(localeSetting)
 		Log.i(TAG, "Using locale from settings: $localeSetting -> country=$country, language=$language")
+
+		// PS3 / Classics product ids (NPEA/NPEB/BLES or NPUA/NPUB/BLUS -- anything that isn't a modern
+		// CUSA/PPSA id) come from the public Apollo catalog, which we walk in the account's region
+		// group (Americas -> US store, everything else -> PAL/GB). Resolve them against that SAME
+		// region's container so the lookup finds the product and returns the PSNW entitlement the
+		// account is authorized for at Gaikai. The account's own locale country can be a region with
+		// no pcnow storefront (e.g. Hungary -> "Storefront not found") and the raw locale 404s, so map
+		// to the region-group store. Must match the PS3 catalog source (fetchPs3ClassicsCatalog).
+		val isLegacyClassicsId = !productId.contains("CUSA") && !productId.contains("PPSA")
+		if (isLegacyClassicsId)
+		{
+			country = com.metallic.chiaki.cloudplay.KamajiClassics.classicsStoreCountry(country)
+			language = "en"
+			Log.i(TAG, "Legacy Classics id -> region-group container: country=$country, language=$language")
+		}
 		val url = "$storeBase/container/$country/$language/19/$productId?useOffers=true&gkb=1&gkb2=1"
 			
 			Log.d(TAG, "Step 0.5d: Convert Product ID")
@@ -560,9 +575,24 @@ class PSKamajiSession(
 				return true
 			}
 			
-		// User doesn't have entitlement (404), try to acquire it
+		// User doesn't have the per-game entitlement on the account (404).
+		// PS3 / Classics: the streaming entitlement is granted by the PS Plus subscription (a free
+		// 100%-off checkout), but that checkout requires a pcnow storefront in the account's region
+		// -- which many regions (e.g. Hungary) don't have, so the acquire fails with "Against
+		// Eligibility Rule". On a real PS5 the subscription alone grants streaming with no purchase,
+		// so skip the acquire and let Gaikai validate the Premium subscription directly. If Gaikai
+		// genuinely needs the entitlement, it returns noGameForEntitlementId downstream.
+		// CUSA/PS4 and PPSA/PS5 keep the existing acquire behavior.
+		val isLegacyClassicsId = !productId.contains("CUSA") && !productId.contains("PPSA")
+		if (isLegacyClassicsId)
+		{
+			Log.i(TAG, "Kamaji Step 0.5e.2 - Entitlement not found (404); legacy Classics id -> skipping acquire, proceeding to Gaikai")
+			return true
+		}
+
+		// PS4/PS5 catalog: try to acquire it via checkout.
 		Log.i(TAG, "Kamaji Step 0.5e.2 - Entitlement not found (404), will attempt to acquire")
-		
+
 		// Step 0.5e.3: Checkout preview
 		// Throws PsPlusSubscriptionException if user doesn't have required subscription
 		val previewOk = step0_5e3_CheckoutPreview(sessionId)

@@ -180,6 +180,7 @@ Pane {
                             authErrorMessage = "";
                         }
                         applySearchFilter();
+                        appendPs3Catalog();
                         // Set focus after games are loaded
                         Qt.callLater(() => {
                             if (gamesGrid.count > 0) {
@@ -279,6 +280,7 @@ Pane {
                 ownedProductIds = Array.from(merged.ownedIds);
                 isLoading = false;
                 applySearchFilter();
+                appendPs3Catalog();
                 Qt.callLater(() => {
                     if (gamesGrid.count > 0) {
                         gamesGrid.currentIndex = 0;
@@ -286,6 +288,53 @@ Pane {
                     }
                 });
             });
+        });
+    }
+
+    // True for streamable PS3 Classics (from the public Apollo PS3 container). They carry
+    // playable_platform ["PS3"] and a PS3 product id, and must stream via the PSNOW/konan path.
+    function gameIsPs3(g) {
+        if (!g)
+            return false;
+        let pp = g.playable_platform;
+        if (!pp)
+            return false;
+        let arr = [];
+        if (Array.isArray(pp))
+            arr = pp;
+        else if (typeof pp === "object" && pp.length !== undefined) {
+            for (let i = 0; i < pp.length; i++) arr.push(pp[i]);
+        } else if (typeof pp === "string")
+            arr = [pp];
+        for (let i = 0; i < arr.length; i++)
+            if (String(arr[i]).indexOf("PS3") !== -1) return true;
+        return false;
+    }
+
+    // Fetch the streamable PS3 Classics (public Apollo container) and append them to the
+    // current catalog. Additive: it never replaces the PS4/PS5 catalog already loaded, so
+    // it works regardless of whether the primary catalog came from PS Now or the imagic
+    // fallback. PS3 belongs only in the subscription Catalog (not the owned Library).
+    function appendPs3Catalog() {
+        // PS3 Classics are subscription-streamable, so they belong in the Game Catalog and
+        // in the Library "all" (streamable universe) view -- but NOT the "owned" view.
+        if (currentSection === "library" && libraryFilter !== "all")
+            return;
+        Chiaki.cloudCatalog.fetchPs3Catalog(function(success, message, jsonData) {
+            if (!success || !jsonData) {
+                console.warn("PS3 Classics catalog unavailable:", message);
+                return;
+            }
+            try {
+                let d = JSON.parse(jsonData);
+                if (d.games && Array.isArray(d.games) && d.games.length > 0) {
+                    allGames = allGames.concat(d.games);
+                    applySearchFilter();
+                    console.log("[CloudPlayView] Appended", d.games.length, "PS3 Classics to catalog");
+                }
+            } catch (e) {
+                console.warn("Failed to parse PS3 catalog:", e);
+            }
         });
     }
 
@@ -501,6 +550,7 @@ Pane {
                                 ownedProductIds = Array.from(merged.ownedIds);
                                 allGames = merged.games;
                                 isLoading = false;
+                                appendPs3Catalog(); // PS3 Classics are part of the streamable "all" view
                                 
                                 // Handle ownership check failure with user-visible feedback
                                 if (ownershipCheckFailed) {
@@ -1504,12 +1554,20 @@ Pane {
                         activeFocusOnTab: false
                         // The catalog is normally PS Now; when it falls back to the imagic
                         // cloud catalog the cards are pscloud (correct streaming path/platform).
-                        isPsnow: currentSection === "catalog" && !catalogImagicFallback
+                        // PS3 Classics (appended from the Apollo container) are always PS Now:
+                        // isPsnow=true makes the card read playable_platform -> "ps3" and route
+                        // to the PSNOW/konan streaming path regardless of the catalog source.
+                        isPsnow: (currentSection === "catalog" && !catalogImagicFallback)
+                                 || gameIsPs3(modelData)
                         // Catalog cards: every subscription title is streamable, so use a non-"all"
                         // value to suppress the "Add Game" state — all of them show "Stream Game".
                         // Library cards use the real filter ("all" enables Add Game for non-owned).
-                        libraryFilter: (currentSection === "catalog" && catalogImagicFallback)
-                                       ? "catalog" : root.libraryFilter
+                        // PS3 Classics are subscription-streamable (never "owned"), so they always
+                        // show "Stream Game" regardless of section/filter.
+                        libraryFilter: gameIsPs3(modelData)
+                                       ? "catalog"
+                                       : ((currentSection === "catalog" && catalogImagicFallback)
+                                          ? "catalog" : root.libraryFilter)
                         qrCodeDialog: root.qrCodeDialogRef
                         
                         // Bind isFavorite to favoriteProductIds array changes

@@ -638,6 +638,85 @@ final class CloudCatalogService {
         return allGames
     }
 
+    // MARK: - PS3 Classics Catalog (public Apollo container walk)
+    //
+    // The PS Plus PC ("Apollo") app browses the streamable catalog through the public pcnow
+    // container API at psnow.playstation.com. There is a dedicated PS3 container (e.g.
+    // STORE-MSF192018-APOLLOPS3GAMES for Americas) that lists ~300 streamable PS3 titles with
+    // their PS3 product ids (NPUA/NPUB/BLUS/BCUS) — none of which appear in the imagic gameslist
+    // the rest of the catalog uses. The container API needs no OAuth or per-account session
+    // (unlike /user/stores, which 404s in regions where the PC app is unavailable, e.g. Hungary),
+    // so we can walk it directly in any region. The resulting titles carry playable_platform
+    // ["PS3"] and stream via the existing PSNOW -> Gaikai konan path.
+
+    /// Resolve the account's region group from its stored store locale (e.g. "en-HU" -> "HU").
+    /// pcnow has two Classics id families (Americas/SCEA and PAL/SCEE); a PS Plus account is
+    /// authorized at Gaikai only for the family of its own region group, so the catalog must be
+    /// browsed in that group. See ClassicsRegion.classicsStoreCountry / classicsPs3ContainerId.
+    private func ps3AccountCountry() -> String {
+        return CloudLocaleSettings.parseStorePath(CloudLocaleSettings.stored).country
+    }
+
+    /// Fetch the streamable PS3 Classics from the public Apollo container for the account's
+    /// region group. Mirrors Qt CloudCatalogBackend::fetchPs3Catalog. PUBLIC API: no auth.
+    func fetchPs3Catalog(forceRefresh: Bool = false) -> [CloudGame] {
+        let country = ps3AccountCountry()
+        let storeCountry = ClassicsRegion.classicsStoreCountry(country)
+        // Region-group-specific cache key so an Americas/PAL switch doesn't serve stale ids.
+        let cacheFile = "ps3_catalog_\(storeCountry).json"
+        if !forceRefresh, let cached = loadCachedGames(cacheFile) {
+            os_log(.info, log: catalogLog, "Returning %d PS3 Classics from cache", cached.count)
+            return cached
+        }
+
+        let containerId = ClassicsRegion.classicsPs3ContainerId(country)
+        let containerUrl = "\(CloudApiConstants.storeBase)/container/\(storeCountry)/en/19/\(containerId)"
+        os_log(.info, log: catalogLog,
+               "=== Fetching PS3 Classics catalog (region group %{public}s for account country %{public}s) ===",
+               storeCountry, country)
+
+        var allGames: [CloudGame] = []
+        var start = 0
+        var totalResults = -1
+
+        while true {
+            let url = "\(containerUrl)?useOffers=true&gkb=1&gkb2=1&start=\(start)&size=100"
+            guard let response = CloudHttpClient.get(url: url, headers: [
+                "Accept": "application/json",
+                "User-Agent": CloudApiConstants.kamajiUserAgent
+            ]), response.statusCode == 200,
+                  let data = response.body.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                os_log(.error, log: catalogLog, "PS3 catalog page failed at start=%d", start)
+                break
+            }
+
+            if totalResults < 0 {
+                totalResults = (json["total_results"] as? Int)
+                    ?? (json["total_results"] as? NSNumber)?.intValue ?? 0
+            }
+
+            let links = json["links"] as? [[String: Any]] ?? []
+            var productCount = 0
+            for link in links {
+                guard (link["container_type"] as? String) == "product" else { continue }
+                guard let game = parsePsnowGameObject(link) else { continue }
+                allGames.append(game)
+                productCount += 1
+            }
+
+            os_log(.info, log: catalogLog, "PS3 page games: %d accumulated: %d of %d",
+                   productCount, allGames.count, totalResults)
+
+            start += 100
+            if productCount == 0 || start >= totalResults { break }
+        }
+
+        os_log(.info, log: catalogLog, "PS3 Classics catalog: %d titles", allGames.count)
+        if !allGames.isEmpty { cacheGames(allGames, filename: cacheFile) }
+        return allGames
+    }
+
     // MARK: - PSNow helpers
 
     private func fetchPsnowOAuthCode(npssoToken: String, duid: String) -> String? {

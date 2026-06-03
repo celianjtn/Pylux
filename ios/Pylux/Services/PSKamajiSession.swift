@@ -143,9 +143,26 @@ final class PSKamajiSession {
         let sku: String
     }
 
+    // PS3 / Classics product ids (NPEA/NPEB/BLES/BCES or NPUA/NPUB/BLUS/BCUS — anything that
+    // isn't a modern CUSA/PPSA id) come from the public Apollo catalog, which we walk in the
+    // account's region group (Americas -> US store, everything else -> PAL/GB). Resolve them
+    // against that SAME region's container so the lookup finds the product and returns the PSNW
+    // entitlement the account is authorized for at Gaikai. The account's own locale country can
+    // be a region with no pcnow storefront (e.g. Hungary -> "Storefront not found"), so map to
+    // the region-group store. Must match CloudCatalogService's PS3 catalog source.
+    private var isLegacyClassicsId: Bool {
+        return !productId.contains("CUSA") && !productId.contains("PPSA")
+    }
+
     private func step0_5d_ConvertProductId(sessionId: String) -> ProductConversion? {
         let storePath = CloudLocaleSettings.parseStorePath(CloudLocaleSettings.stored)
-        let url = "\(storeBase)/container/\(storePath.country)/\(storePath.language)/19/\(productId)?useOffers=true&gkb=1&gkb2=1"
+        var country = storePath.country
+        var language = storePath.language
+        if isLegacyClassicsId {
+            country = ClassicsRegion.classicsStoreCountry(country)
+            language = "en"
+        }
+        let url = "\(storeBase)/container/\(country)/\(language)/19/\(productId)?useOffers=true&gkb=1&gkb2=1"
         os_log(.info, log: kamajiLog, "Store container locale: %{public}s", CloudLocaleSettings.stored)
 
         guard let response = CloudHttpClient.get(url: url, headers: [
@@ -230,6 +247,20 @@ final class PSKamajiSession {
         if hasEntitlement == nil { return false }
         if hasEntitlement == true { return true }
 
+        // Entitlement not found (404). For PS3 / Classics (legacy non-CUSA/PPSA ids) the streaming
+        // entitlement is granted by the PS Plus subscription via a free 100%-off checkout, but that
+        // checkout requires a pcnow storefront in the account's region — which many regions (e.g.
+        // Hungary) don't have, so the acquire fails with "Against Eligibility Rule". On a real PS5
+        // the subscription alone grants streaming with no purchase, so skip the acquire and let
+        // Gaikai validate the Premium subscription directly. If Gaikai genuinely needs the
+        // entitlement, it returns noGameForEntitlementId downstream and we learn the wall is there.
+        if isLegacyClassicsId {
+            os_log(.info, log: kamajiLog,
+                   "Entitlement not found (404); legacy Classics id -> skipping acquire, proceeding to Gaikai")
+            return true
+        }
+
+        // PS4/PS5 catalog: try to acquire it via checkout.
         // Step 0.5e.3: Checkout preview
         guard step0_5e3_CheckoutPreview(sessionId: sessionId) else { return false }
 

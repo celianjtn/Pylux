@@ -408,8 +408,9 @@ class CloudPlayFragment : Fragment()
 			val currentlyOwned = viewModel.preferences.getPsCloudFilterOwned()
 			viewModel.preferences.setPsCloudFilterOwned(!currentlyOwned)
 			updateOwnedToggleButton()
-			// Re-fetch with new filter
-			viewModel.fetchPs5CloudCatalog(showOnlyOwned = !currentlyOwned)
+			// Re-fetch with new filter. PS3 Classics only in the streamable "all" view (not "owned").
+			val newShowOnlyOwned = !currentlyOwned
+			viewModel.fetchPs5CloudCatalog(showOnlyOwned = newShowOnlyOwned, appendPs3Classics = !newShowOnlyOwned)
 		}
 		
 		// Icon buttons in header
@@ -517,8 +518,9 @@ class CloudPlayFragment : Fragment()
 		
 		// Update favorites icon to match new section
 		updateFavoritesIcon()
-		
-		viewModel.fetchPsnowCatalog()
+
+		// Append the streamable PS3 Classics (public Apollo container) to the Catalog after it loads.
+		viewModel.fetchPsnowCatalog(appendPs3Classics = true)
 	}
 	
 	private fun selectLibraryTab()
@@ -552,11 +554,13 @@ class CloudPlayFragment : Fragment()
 		
 		val isOwnedFilter = viewModel.preferences.getPsCloudFilterOwned()
 		val isFavoritesFilter = preferences.getPsCloudFilterFavorites()
-		
+
+		// PS3 Classics belong in the streamable "all" view only (never the "owned" list). The
+		// favorites filter draws from the same "all" set, so include PS3 there too.
 		if (isFavoritesFilter) {
-			viewModel.fetchPs5CloudCatalog(showOnlyOwned = false)
+			viewModel.fetchPs5CloudCatalog(showOnlyOwned = false, appendPs3Classics = true)
 		} else {
-			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter)
+			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter, appendPs3Classics = !isOwnedFilter)
 		}
 	}
 	
@@ -612,9 +616,10 @@ class CloudPlayFragment : Fragment()
 		val currentSection = viewModel.getCurrentSection()
 		if (currentSection == "pscloud") {
 			val isOwnedFilter = viewModel.preferences.getPsCloudFilterOwned()
-			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter, forceRefresh = true)
+			// PS3 Classics belong in the streamable "all" view only, never the "owned" list.
+			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter, forceRefresh = true, appendPs3Classics = !isOwnedFilter)
 		} else {
-			viewModel.fetchPsnowCatalog(forceRefresh = true)
+			viewModel.fetchPsnowCatalog(forceRefresh = true, appendPs3Classics = true)
 		}
 	}
 	
@@ -675,11 +680,12 @@ class CloudPlayFragment : Fragment()
 		if (currentSection == "pscloud")
 		{
 			val isOwnedFilter = viewModel.preferences.getPsCloudFilterOwned()
-			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter, forceRefresh = true)
+			// PS3 Classics belong in the streamable "all" view only, never the "owned" list.
+			viewModel.fetchPs5CloudCatalog(showOnlyOwned = isOwnedFilter, forceRefresh = true, appendPs3Classics = !isOwnedFilter)
 		}
 		else
 		{
-			viewModel.fetchPsnowCatalog(forceRefresh = true)
+			viewModel.fetchPsnowCatalog(forceRefresh = true, appendPs3Classics = true)
 		}
 	}
 	
@@ -730,8 +736,8 @@ class CloudPlayFragment : Fragment()
 					)
 					viewModel.setSortedGames(sortedGames)
 				} else {
-					// Catalog: Reload from cache to restore original API order
-					viewModel.fetchPsnowCatalog(forceRefresh = false)
+					// Catalog: Reload from cache to restore original API order (PS3 Classics included)
+					viewModel.fetchPsnowCatalog(forceRefresh = false, appendPs3Classics = true)
 				}
 			}
 			1 -> {
@@ -805,22 +811,22 @@ class CloudPlayFragment : Fragment()
 			// Game Library
 			when (selectedItem) {
 				0 -> {
-					// All Games
+					// All Games (streamable universe includes PS3 Classics)
 					preferences.setPsCloudFilterFavorites(false)
 					preferences.setPsCloudFilterOwned(false)
-					viewModel.fetchPs5CloudCatalog(showOnlyOwned = false, forceRefresh = false)
+					viewModel.fetchPs5CloudCatalog(showOnlyOwned = false, forceRefresh = false, appendPs3Classics = true)
 				}
 				1 -> {
-					// Owned Games
+					// Owned Games (PS3 Classics are subscription-streamable, never "owned")
 					preferences.setPsCloudFilterFavorites(false)
 					preferences.setPsCloudFilterOwned(true)
 					viewModel.fetchPs5CloudCatalog(showOnlyOwned = true, forceRefresh = false)
 				}
 				2 -> {
-					// Favorites
+					// Favorites (drawn from the "all" set, so include PS3 Classics)
 					preferences.setPsCloudFilterFavorites(true)
 					preferences.setPsCloudFilterOwned(false)
-					viewModel.fetchPs5CloudCatalog(showOnlyOwned = false, forceRefresh = false)
+					viewModel.fetchPs5CloudCatalog(showOnlyOwned = false, forceRefresh = false, appendPs3Classics = true)
 				}
 			}
 		} else {
@@ -829,12 +835,12 @@ class CloudPlayFragment : Fragment()
 				0 -> {
 					// All Games
 					preferences.setPsnowFilterFavorites(false)
-					viewModel.fetchPsnowCatalog(forceRefresh = false)
+					viewModel.fetchPsnowCatalog(forceRefresh = false, appendPs3Classics = true)
 				}
 				1 -> {
 					// Favorites
 					preferences.setPsnowFilterFavorites(true)
-					viewModel.fetchPsnowCatalog(forceRefresh = false)
+					viewModel.fetchPsnowCatalog(forceRefresh = false, appendPs3Classics = true)
 				}
 			}
 		}

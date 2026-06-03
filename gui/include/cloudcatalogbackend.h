@@ -41,6 +41,11 @@ public:
 
     // Main catalog fetching methods
     Q_INVOKABLE void fetchPsnowCatalog(const QJSValue &callback);
+    // Streamable PS3 Classics catalog. Walks the PUBLIC pcnow (Apollo) container
+    // STORE-MSF192018-APOLLOPS3GAMES (no OAuth/session needed -- the container API is
+    // open), returning ~300 PS3 titles that imagic/gameslist never lists. These stream
+    // via the PSNOW -> Gaikai konan path the streaming code already supports.
+    Q_INVOKABLE void fetchPs3Catalog(const QJSValue &callback);
     Q_INVOKABLE void fetchPs5CloudCatalog(const QJSValue &callback);
     Q_INVOKABLE void fetchOwnedPs5Games(const QJSValue &callback);
     Q_INVOKABLE void getOwnedPs5CloudGames(const QJSValue &callback);
@@ -95,7 +100,18 @@ private:
         QString duid;
         bool authInProgress;
     } psnowState;
-    
+
+    // PS3 Classics catalog fetching state (public Apollo PS3 container, paginated).
+    // containerUrl is resolved per account region group (Americas vs PAL) at fetch time.
+    struct Ps3FetchState {
+        QJSValue callback;
+        QJsonArray allGames;
+        QString containerUrl;
+        int currentStart = 0;
+        int totalResults = -1;
+        bool inProgress = false;
+    } ps3State;
+
     // PS5 catalog fetching state (six imagic lists, merged like Sony's PS5 cloud finder)
     struct Ps5FetchState {
         QJSValue callback;
@@ -152,6 +168,10 @@ private:
     void ensureCacheDirectory();
     void fetchPsnowCategory(int categoryIndex);
     void processPsnowCatalogComplete();
+    QString ps3AccountCountry() const;
+    void fetchPs3CatalogPage();
+    void handlePs3CatalogPageResponse();
+    void finishPs3Catalog();
     void fetchOwnedGamesOAuthToken();
     void fetchPsnowOAuthToken();
     void fetchPsnowSession();

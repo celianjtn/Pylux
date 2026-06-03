@@ -172,6 +172,39 @@ enum CloudApiConstants {
     static let accountBase = "https://ca.account.sony.com/api"
 }
 
+// MARK: - PS3 / Classics region (mirrors KamajiConsts in gui/include/cloudstreaming/pskamajisession.h)
+
+/// pcnow (the PS Plus PC "Apollo" backend) has only TWO Classics id families:
+///   * SCEA / Americas  -> store MSF192018, US-region ids (UP*/NPUA*/BLUS*),
+///                         PS3 child container "APOLLOPS3GAMES"
+///   * SCEE / PAL (rest) -> store MSF192014, EU-region ids (EP*/NPEA*/NPEB*/BLES*),
+///                         PS3 child container "APOLLOPS3"
+/// JP / Asia have no Apollo store (the PC app isn't offered there), so they fall back to
+/// PAL. A PS Plus account is authorized at Gaikai only for the id family of its own region
+/// group, so we must browse + resolve in the account's group.
+enum ClassicsRegion {
+    private static let americas: Set<String> = [
+        "US", "CA", "MX", "BR", "AR", "CL", "CO", "PE", "EC", "BO",
+        "PY", "UY", "CR", "GT", "HN", "NI", "PA", "SV", "DO"
+    ]
+
+    static func isAmericasClassicsRegion(_ countryCode: String) -> Bool {
+        return americas.contains(countryCode.uppercased())
+    }
+
+    /// Country path to use for container/conversion calls (US for Americas, GB for PAL).
+    static func classicsStoreCountry(_ accountCountry: String) -> String {
+        return isAmericasClassicsRegion(accountCountry) ? "US" : "GB"
+    }
+
+    /// Fully-qualified PS3 catalog container id for the account's region group.
+    static func classicsPs3ContainerId(_ accountCountry: String) -> String {
+        return isAmericasClassicsRegion(accountCountry)
+            ? "STORE-MSF192018-APOLLOPS3GAMES"
+            : "STORE-MSF192014-APOLLOPS3"
+    }
+}
+
 // MARK: - Gaikai Allocation Result
 
 struct GaikaiAllocationResult {

@@ -2812,6 +2812,81 @@ void CloudCatalogBackend::processCrossReferenceComplete()
         }
     }
 
+    // Disc-upgrade rescue. feature_type 5 marks a PS4-disc -> PS5 *disc upgrade* license; Gaikai
+    // refuses to cloud-stream it ("disc-upgrade-unsupported"). The browse catalog often binds a
+    // concept to exactly that SKU (e.g. Horizon Forbidden West concept 10000886 -> PPSA01521), while
+    // the user's streamable full-game entitlement is a DIFFERENT title id (e.g. Complete Edition
+    // PPSA17903) that is absent from the catalog and carries no conceptId -- so the cross-reference
+    // never matches it and only the disc-upgrade SKU survives the dedupe. When a concept winner is a
+    // disc upgrade, adopt the product id of a same-name full-game (feature_type 3) owned SKU so the
+    // card streams the edition Gaikai accepts.
+    //
+    // Entitlements carry no conceptId (the commerce API omits it) and the disc-upgrade SKU shares no
+    // id/sku with the real edition, so the only in-data bridge is the title name. To keep that safe:
+    //   - SAME PLATFORM only (a PS5/PPSA disc upgrade must never pull in a PS4/CUSA SKU of a
+    //     same-named game),
+    //   - prefer the CANONICAL base game (product_id == entitlement id, i.e. not a bundle/add-on SKU),
+    //   - and BAIL on genuine ambiguity (two distinct base games sharing one name) rather than guess.
+    auto normalizeTitle = [](const QString &raw) {
+        return raw.toLower().remove(QChar(0x2122)).remove(QChar(0x00AE)).remove(QChar(0x2120)).simplified();
+    };
+    for (auto it = ownedByKey.begin(); it != ownedByKey.end(); ++it) {
+        QJsonObject entry = it.value();
+        if (entry.value(QStringLiteral("feature_type")).toInt() != 5)
+            continue;
+        const QString discPid = entry.value(QStringLiteral("product_id")).toString();
+        const QString discPlatform = ps5CloudPlatformToken(discPid);
+        const QString discName = normalizeTitle(entry.value(QStringLiteral("game_meta")).toObject()
+                                                     .value(QStringLiteral("name")).toString());
+        if (discName.isEmpty())
+            continue;
+        QStringList canonicalPids; // base-game SKUs (product_id == entitlement id)
+        QStringList otherPids;     // non-canonical full-game SKUs (bundle/edition products)
+        for (const QJsonValue &candVal : crossReferenceState.ownedGames) {
+            if (!candVal.isObject())
+                continue;
+            const QJsonObject cand = candVal.toObject();
+            // Require a standard digital full game (feature_type 3) -- not another disc upgrade,
+            // DLC/add-on (ft 0) or trial (ft 1) -- whose name matches the disc-upgrade title.
+            if (cand.value(QStringLiteral("feature_type")).toInt() != 3)
+                continue;
+            const QString candName = normalizeTitle(cand.value(QStringLiteral("game_meta")).toObject()
+                                                        .value(QStringLiteral("name")).toString());
+            if (candName != discName)
+                continue;
+            const QString candPid = cand.value(QStringLiteral("product_id")).toString();
+            if (candPid.isEmpty() || candPid == discPid)
+                continue;
+            if (ps5CloudPlatformToken(candPid) != discPlatform)
+                continue; // never cross platforms (PS5 disc upgrade must not resolve to a PS4 SKU)
+            const QString candId = cand.value(QStringLiteral("id")).toString();
+            if (candPid == candId) {
+                if (!canonicalPids.contains(candPid)) canonicalPids.append(candPid);
+            } else {
+                if (!otherPids.contains(candPid)) otherPids.append(candPid);
+            }
+        }
+        // A single canonical base game wins; else a single non-canonical full game; else bail.
+        QString replacementPid;
+        if (canonicalPids.size() == 1)
+            replacementPid = canonicalPids.first();
+        else if (canonicalPids.isEmpty() && otherPids.size() == 1)
+            replacementPid = otherPids.first();
+        if (replacementPid.isEmpty()) {
+            if (!canonicalPids.isEmpty() || !otherPids.isEmpty())
+                qWarning() << "[CROSS-REF] disc-upgrade rescue: ambiguous full-game candidates for"
+                           << discName << "canonical=" << canonicalPids << "other=" << otherPids
+                           << "-- leaving disc-upgrade SKU in place";
+            continue;
+        }
+        entry.insert(QStringLiteral("product_id"), replacementPid);
+        entry.insert(QStringLiteral("productId"), replacementPid);
+        entry.insert(QStringLiteral("catalogProductId"), replacementPid);
+        it.value() = entry;
+        qInfo() << "[CROSS-REF] disc-upgrade rescue:" << discName << ":" << discPid
+                << "-> streamable" << replacementPid;
+    }
+
     for (const QJsonObject &gameObj : ownedByKey)
         filteredGames.append(gameObj);
 

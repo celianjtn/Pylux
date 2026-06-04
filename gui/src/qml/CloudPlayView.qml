@@ -475,11 +475,16 @@ Pane {
                 // the owned DOWNLOAD product (e.g. ...GODOFWAR) has NO PS Now streaming SKU -- the
                 // catalog entry's own productId (e.g. ...GODOFWARN, the "N" variant) is what Kamaji
                 // converts to a streaming entitlement -- so leave the catalog productId intact.
+                //
+                // Override UNCONDITIONALLY for PS5 (matching the iOS/Android merge, which always copy
+                // storeProductId): the catalog card carries one fixed SKU per concept, but you can only
+                // stream the edition you actually own. When they differ -- e.g. the catalog SKU is a
+                // disc-upgrade you can't stream and the cross-reference rescued you to the owned full
+                // game -- the catalog card already has a (wrong) product_id, so a guarded assignment
+                // would keep the unstreamable id. The owned product id must win.
                 if (ownedProductId && ps5CloudPlatformToken(ownedProductId) === "ps5") {
-                    if (!existing.product_id)
-                        existing.product_id = ownedProductId;
-                    if (!existing.productId)
-                        existing.productId = ownedProductId;
+                    existing.product_id = ownedProductId;
+                    existing.productId = ownedProductId;
                 }
                 games[catalogMatch] = existing;
                 continue;

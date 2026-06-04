@@ -2,11 +2,13 @@
 
 package com.metallic.chiaki.cloudplay.api
 
+import android.util.Log
 import com.metallic.chiaki.cloudplay.model.CloudGame
 import org.json.JSONObject
 
 object PsCloudOwnership
 {
+	private const val TAG = "PsCloudOwnership"
 	const val PAGE_SIZE = 300
 	const val PAGE_COOLDOWN_MS = 100L
 
@@ -177,6 +179,64 @@ object PsCloudOwnership
 			}
 		}
 
+		// Disc-upgrade rescue (mirrors cloudcatalogbackend.cpp). feature_type 5 is a PS4-disc -> PS5
+		// *disc upgrade* license; Gaikai refuses to cloud-stream it ("disc-upgrade-unsupported"). The
+		// browse catalog often binds the concept to exactly that SKU (e.g. Horizon Forbidden West
+		// concept 10000886 -> PPSA01521), while the user's streamable full-game entitlement is a
+		// DIFFERENT title id (e.g. Complete Edition PPSA17903) that is absent from the catalog and
+		// carries no conceptId -- so it never matches and only the disc-upgrade SKU survives. When a
+		// concept winner is a disc upgrade, adopt a same-name full-game (feature_type 3) owned SKU's
+		// product id so the card streams the edition Gaikai accepts.
+		//
+		// Entitlements carry no conceptId and the disc-upgrade SKU shares no id/sku with the real
+		// edition, so the only in-data bridge is the title name. To keep that safe: SAME PLATFORM only
+		// (a PS5/PPSA disc upgrade must never resolve to a PS4/CUSA SKU), prefer the canonical base game
+		// (product_id == entitlement id), and BAIL on genuine ambiguity rather than guess.
+		for (key in byKey.keys.toList())
+		{
+			val game = byKey[key] ?: continue
+			if (game.featureType != 5) continue
+			val discPid = game.storeProductId
+			val discPlatform = platformToken(discPid)
+			val discEnt = filteredEntitlements.firstOrNull {
+				it.productId == discPid && it.featureType == 5
+			} ?: continue
+			val discName = normalizeTitle(discEnt.name)
+			if (discName.isEmpty()) continue
+			val canonical = mutableListOf<String>()   // base-game SKUs (product_id == entitlement id)
+			val other = mutableListOf<String>()        // non-canonical full-game SKUs
+			for (cand in filteredEntitlements)
+			{
+				if (cand.featureType != 3) continue
+				if (normalizeTitle(cand.name) != discName) continue
+				val candPid = cand.productId
+				if (candPid.isEmpty() || candPid == discPid) continue
+				if (platformToken(candPid) != discPlatform) continue
+				if (candPid == cand.id)
+				{
+					if (candPid !in canonical) canonical.add(candPid)
+				}
+				else if (candPid !in other)
+				{
+					other.add(candPid)
+				}
+			}
+			val replacement = when
+			{
+				canonical.size == 1 -> canonical[0]
+				canonical.isEmpty() && other.size == 1 -> other[0]
+				else -> null
+			}
+			if (replacement == null)
+			{
+				if (canonical.isNotEmpty() || other.isNotEmpty())
+					Log.w(TAG, "disc-upgrade rescue: ambiguous candidates for $discName -- leaving disc SKU")
+				continue
+			}
+			byKey[key] = game.copy(storeProductId = replacement)
+			Log.i(TAG, "disc-upgrade rescue: $discName $discPid -> $replacement")
+		}
+
 		return byKey.values.toList()
 	}
 
@@ -198,6 +258,13 @@ object PsCloudOwnership
 		productId.contains("CUSA") -> "ps4"
 		else -> ""
 	}
+
+	/** Lowercase, strip trademark/registered/service-mark glyphs, and collapse whitespace so two owned
+	 *  entitlements for the same game compare equal across punctuation/spacing differences. */
+	private fun normalizeTitle(raw: String): String =
+		raw.lowercase()
+			.replace("™", "").replace("®", "").replace("℠", "")
+			.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ")
 
 	/** A full-game entitlement (vs add-on/avatar): base game has a *GD package_type. */
 	private fun isFullGameEntitlement(ent: Entitlement): Boolean =

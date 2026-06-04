@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: LicenseRef-AGPL-3.0-only-OpenSSL
 
 import Foundation
+import os.log
+
+private let ownershipLog = OSLog(subsystem: "com.pylux.stream", category: "CloudOwnership")
 
 /// Raw entitlement fields from Sony internal_entitlements API.
 struct PsCloudEntitlement {
@@ -160,6 +163,64 @@ enum PsCloudOwnership {
             }
         }
 
+        // Disc-upgrade rescue (mirrors cloudcatalogbackend.cpp). feature_type 5 is a PS4-disc -> PS5
+        // *disc upgrade* license; Gaikai refuses to cloud-stream it ("disc-upgrade-unsupported"). The
+        // browse catalog often binds the concept to exactly that SKU (e.g. Horizon Forbidden West
+        // concept 10000886 -> PPSA01521), while the user's streamable full-game entitlement is a
+        // DIFFERENT title id (e.g. Complete Edition PPSA17903) that is absent from the catalog and
+        // carries no conceptId -- so it never matches and only the disc-upgrade SKU survives. When a
+        // concept winner is a disc upgrade, adopt a same-name full-game (feature_type 3) owned SKU's
+        // product id so the card streams the edition Gaikai accepts.
+        //
+        // Entitlements carry no conceptId and the disc-upgrade SKU shares no id/sku with the real
+        // edition, so the only in-data bridge is the title name. To keep that safe: SAME PLATFORM only
+        // (a PS5/PPSA disc upgrade must never resolve to a PS4/CUSA SKU), prefer the canonical base
+        // game (product_id == entitlement id), and BAIL on genuine ambiguity rather than guess.
+        for key in Array(byKey.keys) {
+            guard let game = byKey[key], game.featureType == 5 else { continue }
+            let discPid = game.storeProductId
+            let discPlatform = platformToken(discPid)
+            guard let discEnt = filteredEntitlements.first(where: {
+                $0.productId == discPid && $0.featureType == 5
+            }) else { continue }
+            let discName = normalizeTitle(discEnt.name)
+            guard !discName.isEmpty else { continue }
+            var canonical: [String] = []   // base-game SKUs (product_id == entitlement id)
+            var other: [String] = []       // non-canonical full-game SKUs
+            for cand in filteredEntitlements where cand.featureType == 3 {
+                guard normalizeTitle(cand.name) == discName else { continue }
+                let candPid = cand.productId
+                guard !candPid.isEmpty, candPid != discPid else { continue }
+                guard platformToken(candPid) == discPlatform else { continue }
+                if candPid == cand.id {
+                    if !canonical.contains(candPid) { canonical.append(candPid) }
+                } else if !other.contains(candPid) {
+                    other.append(candPid)
+                }
+            }
+            let replacement: String?
+            if canonical.count == 1 {
+                replacement = canonical[0]
+            } else if canonical.isEmpty, other.count == 1 {
+                replacement = other[0]
+            } else {
+                replacement = nil
+            }
+            guard let rep = replacement else {
+                if !canonical.isEmpty || !other.isEmpty {
+                    os_log(.info, log: ownershipLog,
+                           "disc-upgrade rescue: ambiguous candidates for %{public}s -- leaving disc SKU",
+                           discName)
+                }
+                continue
+            }
+            var updated = game
+            updated.storeProductId = rep
+            byKey[key] = updated
+            os_log(.info, log: ownershipLog, "disc-upgrade rescue: %{public}s %{public}s -> %{public}s",
+                   discName, discPid, rep)
+        }
+
         return Array(byKey.values)
     }
 
@@ -178,6 +239,16 @@ enum PsCloudOwnership {
         if productId.contains("PPSA") { return "ps5" }
         if productId.contains("CUSA") { return "ps4" }
         return ""
+    }
+
+    // Lowercase, strip trademark/registered/service-mark glyphs, and collapse whitespace so two owned
+    // entitlements for the same game compare equal across punctuation/spacing differences.
+    private static func normalizeTitle(_ raw: String) -> String {
+        let stripped = raw.lowercased()
+            .replacingOccurrences(of: "\u{2122}", with: "")
+            .replacingOccurrences(of: "\u{00AE}", with: "")
+            .replacingOccurrences(of: "\u{2120}", with: "")
+        return stripped.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
     // A "full game" entitlement (vs add-on/avatar/theme): PSN marks the base game with a *GD

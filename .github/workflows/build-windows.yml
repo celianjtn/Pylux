@@ -209,6 +209,7 @@ jobs:
 
       - name: Publish installer
         id: installer
+        continue-on-error: true
         uses: ./.github/actions/dropbox-publish
         with:
           file: ${{ env.INSTALLER_NAME }}

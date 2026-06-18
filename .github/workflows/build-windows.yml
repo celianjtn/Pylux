@@ -197,6 +197,7 @@ jobs:
 
       - name: Publish portable zip
         id: zip
+        continue-on-error: true
         uses: ./.github/actions/dropbox-publish
         with:
           file: ${{ env.RELEASE_PACKAGE_PATH }}

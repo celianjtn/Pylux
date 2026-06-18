@@ -177,6 +177,12 @@ jobs:
         run: |
           zip -r pylux.zip pylux
           echo "RELEASE_PACKAGE_PATH=pylux.zip" >> $GITHUB_ENV
+    
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pylux-Windows-Build
+          path: pylux.zip
 
       - name: Extract version
         id: extract_version
